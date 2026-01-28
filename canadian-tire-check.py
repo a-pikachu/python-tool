@@ -267,7 +267,7 @@ def main():
             for store_label, search_query in STORES.items():
                 print(f"\nChecking: {store_label}")
                 page.goto(url, wait_until="domcontentloaded")
-                page.wait_for_timeout(5000)
+                page.wait_for_timeout(800)
 
                 if not open_retail_store_selector(page):
                     print(f"Skipping {store_label} — modal did not open")
