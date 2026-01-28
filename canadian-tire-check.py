@@ -8,9 +8,6 @@ load_dotenv()
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-
-PRODUCT_URL = "https://www.canadiantire.ca/en/pdp/0508182p.html"
-
 PRODUCTS = [
     {
         "label": "Car Culture",
@@ -40,24 +37,6 @@ STORES = {
     "Burnaby South, BC": "Southeast Marine Drive, Burnaby, BC",
 }
 
-def dismiss_geolocation_popup(page):
-    try:
-        btn = page.locator("button:has-text('Choose Store')")
-        if btn.is_visible():
-            btn.click()
-            page.wait_for_timeout(600)
-    except:
-        pass
-
-def dismiss_email_popup(page):
-    try:
-        close_btn = page.locator("button:has(svg), button[class*='close']").first
-        if close_btn.is_visible():
-            close_btn.click()
-            page.wait_for_timeout(400)
-    except:
-        pass
-
 def normalize_quantity(q):
     if isinstance(q, str) and q.strip().lower() == "out of stock":
         return 0
@@ -67,11 +46,27 @@ def normalize_quantity(q):
         return 0
 
 def open_retail_store_selector(page):
-    link = page.locator("text=Check other stores").first
+    links = page.locator("text=Check other stores")
+    count = links.count()
+    if count == 0:
+        print("❌ No 'Check other stores' links found")
+        return False
+
+    # Always click the last one
+    link = links.nth(count - 1)
+
     link.scroll_into_view_if_needed()
     link.wait_for(state="visible")
+    page.wait_for_timeout(200)
     link.click()
-    page.wait_for_selector("div.nl-overlay div[role='dialog'] input[type='text']", timeout=8000)
+
+    page.wait_for_selector(
+        "div.nl-overlay div[role='dialog'] input[type='text']",
+        timeout=8000
+    )
+
+    return True
+
 
 def click_first_suggestion(page):
     # Suggestions are rendered OUTSIDE the modal in a React portal
@@ -109,34 +104,34 @@ def search_and_scrape_first_card(page, search_text, match_name):
     for i in range(count):
         card = cards.nth(i)
 
-        # Extract store name
+        # Extract store name from card
         name_el = card.locator("h3").first
         if not name_el.count():
             continue
 
-        store_name = name_el.inner_text().strip()
+        card_name = name_el.inner_text().strip()
 
-        # ⭐ Match by exact store name from dict
-        if match_name.lower() not in store_name.lower():
+        # Match using the dict key (partial match)
+        if match_name.lower() not in card_name.lower():
             continue
 
         # Extract stock tag
         stock_el = card.locator("span.nl-tag").first
         if not stock_el.count():
-            return store_name, 0
+            return match_name, 0
 
         stock_text = stock_el.inner_text().strip().lower()
 
         if "out of stock" in stock_text:
-            return store_name, 0
+            return match_name, 0
 
         m = re.search(r"(\d+)", stock_text)
         if m:
-            return store_name, int(m.group(1))
+            return match_name, int(m.group(1))
 
-        return store_name, 0
+        return match_name, 0
 
-    return "UNKNOWN", 0
+    return match_name, 0
 
 
 def save_snapshot(results, folder_path):
@@ -188,10 +183,10 @@ def print_increases(increases):
 def update_google_sheet(results, csv_path):
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Store ID", "Store Name", "Stock"])
+        writer.writerow(["Store Name", "Stock"])
 
-        for store_id, (store_name, quantity) in results.items():
-            writer.writerow([store_id, store_name, quantity])
+        for store_name, quantity in results.items():
+            writer.writerow([store_name, quantity])
 
 def append_history(results, csv_path):
     file_exists = os.path.exists(csv_path)
@@ -199,14 +194,13 @@ def append_history(results, csv_path):
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
 
-        # Write header only if file is new
         if not file_exists:
-            writer.writerow(["Timestamp", "Store ID", "Store Name", "Stock"])
+            writer.writerow(["Timestamp", "Store Name", "Stock"])
 
         timestamp = datetime.datetime.now().isoformat()
 
-        for store_id, (store_name, quantity) in results.items():
-            writer.writerow([timestamp, store_id, store_name, quantity])
+        for store_name, quantity in results.items():
+            writer.writerow([timestamp, store_name, quantity])
 
 def send_email_alert(
     smtp_server,
@@ -267,25 +261,28 @@ def main():
             print(f"==============================")
 
             results = {}
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(30000)
 
             for store_label, search_query in STORES.items():
                 print(f"\nChecking: {store_label}")
                 page.goto(url, wait_until="domcontentloaded")
-                page.wait_for_timeout(800)
+                page.wait_for_timeout(5000)
 
-                dismiss_geolocation_popup(page)
-                dismiss_email_popup(page)
-                open_retail_store_selector(page)
-
-                store_name, quantity = search_and_scrape_first_card(page, search_query, store_label)
+                if not open_retail_store_selector(page):
+                    print(f"Skipping {store_label} — modal did not open")
+                    results[store_label]=0
+                    continue
+                
+                _, quantity = search_and_scrape_first_card(page, search_query, store_label)
 
                 print(f"{store_label} → {quantity} In Stock")
-                results[store_label] = (store_name, quantity)
+                results[store_label] = (quantity)
 
                 time.sleep(1)
 
             print("\nFinal Results:")
-            for store_label, (store_name, quantity) in results.items():
+            for store_label, quantity in results.items():
                 print(f"{store_label} → {quantity} In Stock")
 
             # 1. Save snapshot
