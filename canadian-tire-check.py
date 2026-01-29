@@ -63,7 +63,7 @@ def open_retail_store_selector(page):
 
             link.scroll_into_view_if_needed()
             link.wait_for(state="visible")
-            page.wait_for_timeout(200)
+            page.wait_for_timeout(2000)
 
             link.click()
 
