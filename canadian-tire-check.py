@@ -4,7 +4,9 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv
 import csv, datetime, json, os, re, smtplib, sys, time   
 
-load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
+env_path = os.path.join(BASE_DIR, "..", ".env") 
+load_dotenv(env_path)
 
 sys.stdout.reconfigure(encoding='utf-8')
 
