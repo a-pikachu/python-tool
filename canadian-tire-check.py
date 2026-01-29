@@ -58,6 +58,7 @@ def open_retail_store_selector(page):
 
             if count == 0:
                 print("❌ No 'Check other stores' links found")
+                page.wait_for_timeout(2000)
                 continue
 
             # Always click the last one
