@@ -46,26 +46,42 @@ def normalize_quantity(q):
         return 0
 
 def open_retail_store_selector(page):
-    links = page.locator("text=Check other stores")
-    count = links.count()
-    if count == 0:
-        print("❌ No 'Check other stores' links found")
-        return False
+    for attempt in range(1, 4):
+        try:
+            print(f"Attempt {attempt} to open store selector…")
 
-    # Always click the last one
-    link = links.nth(count - 1)
+            # Re-locate each attempt (CT rehydrates DOM often)
+            links = page.locator("text=Check other stores")
+            count = links.count()
 
-    link.scroll_into_view_if_needed()
-    link.wait_for(state="visible")
-    page.wait_for_timeout(200)
-    link.click()
+            if count == 0:
+                print("❌ No 'Check other stores' links found")
+                continue
 
-    page.wait_for_selector(
-        "div.nl-overlay div[role='dialog'] input[type='text']",
-        timeout=8000
-    )
+            # Always click the last one
+            link = links.nth(count - 1)
 
-    return True
+            link.scroll_into_view_if_needed()
+            link.wait_for(state="visible")
+            page.wait_for_timeout(200)
+
+            link.click()
+
+            # Wait for modal input
+            page.wait_for_selector(
+                "div.nl-overlay div[role='dialog'] input[type='text']",
+                timeout=8000
+            )
+
+            print("✔ Store selector opened successfully")
+            return True
+
+        except Exception as e:
+            print(f"⚠️ Attempt {attempt} failed: {e}")
+            page.wait_for_timeout(500)
+
+    print("❌ Failed to open store selector after 3 attempts")
+    return False
 
 
 def click_first_suggestion(page):
@@ -162,8 +178,17 @@ def load_snapshots(folder_path):
 def diff_snapshots(old, new):
     increases = {}
     for store in new:
-        old_val = old.get(store, 0)
         new_val = new[store]
+
+        # Ignore unreachable or invalid values
+        if new_val < 0:
+            continue
+
+        old_val = old.get(store, -1)
+
+        # Ignore old unreachable values too
+        if old_val < 0:
+            continue
 
         # Only report if stock increased
         if new_val > old_val:
@@ -267,11 +292,11 @@ def main():
             for store_label, search_query in STORES.items():
                 print(f"\nChecking: {store_label}")
                 page.goto(url, wait_until="domcontentloaded")
-                page.wait_for_timeout(800)
+                page.wait_for_timeout(5000)
 
                 if not open_retail_store_selector(page):
                     print(f"Skipping {store_label} — modal did not open")
-                    results[store_label]=0
+                    results[store_label] = -1   # unreachable / failed check
                     continue
                 
                 _, quantity = search_and_scrape_first_card(page, search_query, store_label)
@@ -316,9 +341,9 @@ def main():
             )
 
             # 6. Append to history sheet
-            append_history(
-                results, fr"G:\canadian-tire\history_{label}.csv"
-            )
+            #append_history(
+            #    results, fr"G:\canadian-tire\history_{label}.csv"
+            #)
 
 
 if __name__ == "__main__":
