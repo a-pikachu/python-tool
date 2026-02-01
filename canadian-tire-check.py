@@ -2,13 +2,19 @@ from playwright.sync_api import sync_playwright
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
-import csv, datetime, json, os, re, smtplib, sys, time   
+import csv, datetime, json, logging, os, re, smtplib, sys, time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
 env_path = os.path.join(BASE_DIR, "..", ".env") 
 load_dotenv(env_path)
 
 sys.stdout.reconfigure(encoding='utf-8')
+
+logging.basicConfig(
+    filename="monitor.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
 PRODUCTS = [
     {
@@ -57,7 +63,7 @@ def open_retail_store_selector(page):
             count = links.count()
 
             if count == 0:
-                print("❌ No 'Check other stores' links found")
+                print("No 'Check other stores' links found")
                 page.wait_for_timeout(2000)
                 continue
 
@@ -76,14 +82,14 @@ def open_retail_store_selector(page):
                 timeout=8000
             )
 
-            print("✔ Store selector opened successfully")
+            print("Store selector opened successfully")
             return True
 
         except Exception as e:
-            print(f"⚠️ Attempt {attempt} failed: {e}")
+            print(f"Attempt {attempt} failed: {e}")
             page.wait_for_timeout(500)
 
-    print("❌ Failed to open store selector after 3 attempts")
+    print("Failed to open store selector after 3 attempts")
     return False
 
 
@@ -103,6 +109,8 @@ def click_first_suggestion(page):
     page.wait_for_timeout(800)
 
 def search_and_scrape_first_card(page, search_text, match_name):
+    logging.info(f"Searching for '{match_name}' using text '{search_text}'")
+
     # 1. Type into modal search box
     search = page.locator("div.nl-overlay div[role='dialog'] input[type='text']").first
     search.click()
@@ -112,45 +120,62 @@ def search_and_scrape_first_card(page, search_text, match_name):
 
     # 2. Click first autocomplete suggestion
     suggestions = page.locator("li[class*='autocomplete'], li[class*='option']")
-    suggestions.first.wait_for(state="visible", timeout=5000)
+    try:
+        suggestions.first.wait_for(state="visible", timeout=5000)
+    except Exception as e:
+        logging.error(f"[{match_name}] autocomplete never appeared → -1 ({e})")
+        return match_name, -1
+
     suggestions.first.click(force=True)
     page.wait_for_timeout(1200)
 
     # 3. Get all cards
     cards = page.locator("div.nl-overlay div[role='dialog'] li")
     count = cards.count()
+    logging.debug(f"[{match_name}] Found {count} cards in modal")
 
     for i in range(count):
         card = cards.nth(i)
 
-        # Extract store name from card
+        # Extract store name
         name_el = card.locator("h3").first
         if not name_el.count():
+            logging.warning(f"[{match_name}] Card {i} missing <h3>, skipping")
             continue
 
         card_name = name_el.inner_text().strip()
 
-        # Match using the dict key (partial match)
+        # Match using partial name
         if match_name.lower() not in card_name.lower():
             continue
 
         # Extract stock tag
         stock_el = card.locator("span.nl-tag").first
         if not stock_el.count():
-            return match_name, 0
+            logging.error(f"[{match_name}] Store '{card_name}' missing stock tag -> -1")
+            return match_name, -1
 
         stock_text = stock_el.inner_text().strip().lower()
+        logging.info(f"[{match_name}] Raw stock text for '{card_name}': '{stock_text}'")
 
+        # Explicit out of stock
         if "out of stock" in stock_text:
+            logging.info(f"[{match_name}] '{card_name}' explicitly OUT OF STOCK -> 0")
             return match_name, 0
 
+        # Extract number
         m = re.search(r"(\d+)", stock_text)
         if m:
-            return match_name, int(m.group(1))
+            qty = int(m.group(1))
+            logging.info(f"[{match_name}] '{card_name}' stock parsed as {qty}")
+            return match_name, qty
 
-        return match_name, 0
+        # Unexpected format
+        logging.error(f"[{match_name}] Cannot parse stock text '{stock_text}' -> -1")
+        return match_name, -1
 
-    return match_name, 0
+    logging.error(f"[{match_name}] No matching card found -> -1")
+    return match_name, -1
 
 
 def save_snapshot(results, folder_path):
@@ -311,7 +336,7 @@ def main():
 
             print("\nFinal Results:")
             for store_label, quantity in results.items():
-                print(f"{store_label} → {quantity} In Stock")
+                print(f"{store_label} -> {quantity} In Stock")
 
             # 1. Save snapshot
             snapshot_path = save_snapshot(results, snapshot_dir)
