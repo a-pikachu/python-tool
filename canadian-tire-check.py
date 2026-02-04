@@ -43,6 +43,7 @@ STORES = {
     "Cambie & 7th, BC": "Cambie Street, Vancouver, BC",
     "Vancouver, Grandview & Boundary, BC": "Grandview Hwy, Vancouver, BC",
     "Burnaby South, BC": "Southeast Marine Drive, Burnaby, BC",
+    "North Vancouver Main, BC": "north vancouver",
 }
 
 def normalize_quantity(q):
@@ -108,6 +109,14 @@ def click_first_suggestion(page):
     suggestions.first.click(force=True)
     page.wait_for_timeout(800)
 
+    # NEW: Wait for modal to load filtered results
+    try:
+        page.locator(
+            f"div.nl-overlay div[role='dialog'] li:has(h3:has-text('{clean_key}'))"
+        ).first.wait_for(state="visible", timeout=5000)
+    except:
+        logging.error(f"[{clean_key}] Modal never loaded filtered results -> -1")
+
 def search_and_scrape_first_card(page, search_text, match_name):
     logging.info(f"Searching for '{match_name}' using text '{search_text}'")
 
@@ -129,10 +138,31 @@ def search_and_scrape_first_card(page, search_text, match_name):
     suggestions.first.click(force=True)
     page.wait_for_timeout(1200)
 
-    # 3. Get all cards
-    cards = page.locator("div.nl-overlay div[role='dialog'] li")
+    # Normalize match key (city only)
+    clean_key = match_name.split(",")[0].strip().lower()
+
+    # Wait for modal to load filtered results (store names containing the city)
+    try:
+        page.locator(
+            f"div.nl-overlay div[role='dialog'] li:has(h3:has-text('{clean_key}'))"
+        ).first.wait_for(state="visible", timeout=5000)
+    except Exception:
+        logging.error(f"[{match_name}] Modal never loaded filtered results -> -1")
+        return match_name, -1
+
+    # 3. Wait for real store cards (those containing <h3>)
+    try:
+        page.locator("div.nl-overlay div[role='dialog'] li h3").first.wait_for(
+            state="visible", timeout=5000
+        )
+    except Exception:
+        logging.error(f"[{match_name}] No real store cards loaded -> -1")
+        return match_name, -1
+
+    # Now select only real cards (li elements that contain an h3)
+    cards = page.locator("div.nl-overlay div[role='dialog'] li:has(h3)")
     count = cards.count()
-    logging.debug(f"[{match_name}] Found {count} cards in modal")
+    logging.info(f"[{match_name}] Found {count} real store cards")
 
     for i in range(count):
         card = cards.nth(i)
@@ -145,8 +175,8 @@ def search_and_scrape_first_card(page, search_text, match_name):
 
         card_name = name_el.inner_text().strip()
 
-        # Match using partial name
-        if match_name.lower() not in card_name.lower():
+        # Match using cleaned city key
+        if clean_key not in card_name.lower():
             continue
 
         # Extract stock tag
@@ -176,7 +206,6 @@ def search_and_scrape_first_card(page, search_text, match_name):
 
     logging.error(f"[{match_name}] No matching card found -> -1")
     return match_name, -1
-
 
 def save_snapshot(results, folder_path):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
