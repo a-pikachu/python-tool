@@ -176,7 +176,7 @@ def search_and_scrape_first_card(page, search_text, match_name):
         card_name = name_el.inner_text().strip()
 
         # Match using cleaned city key
-        if clean_key not in card_name.lower():
+        if match_name.lower() != card_name.lower():
             continue
 
         # Extract stock tag
