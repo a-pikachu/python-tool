@@ -120,9 +120,18 @@ def click_first_suggestion(page):
 def search_and_scrape_first_card(page, search_text, match_name):
     logging.info(f"Searching for '{match_name}' using text '{search_text}'")
 
-    # 1. Type into modal search box
+    # 1. Wait for input container to finish animating
+    try:
+        container = page.locator("div.nl-overlay div[role='dialog'] .nl-textinput").first
+        container.wait_for(state="visible", timeout=5000)
+        page.wait_for_timeout(300)
+    except:
+        logging.error(f"[{match_name}] Input container never stabilized")
+        return match_name, -1
+
+    # 2. Now safely click the input
     search = page.locator("div.nl-overlay div[role='dialog'] input[type='text']").first
-    search.click()
+    search.click(force=True)
     search.fill("")
     page.keyboard.type(search_text, delay=25)
     page.wait_for_timeout(1000)
