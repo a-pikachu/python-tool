@@ -55,6 +55,7 @@ def normalize_quantity(q):
         return 0
 
 def open_retail_store_selector(page):
+    page.wait_for_timeout(6000)
     for attempt in range(1, 4):
         try:
             print(f"Attempt {attempt} to open store selector…")
@@ -353,7 +354,7 @@ def main():
 
             results = {}
             page.goto(url, wait_until="domcontentloaded")
-            page.wait_for_timeout(30000)
+            page.wait_for_timeout(6000)
 
             for store_label, search_query in STORES.items():
                 print(f"\nChecking: {store_label}")
