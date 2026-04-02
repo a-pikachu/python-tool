@@ -23,6 +23,16 @@ PRODUCTS = [
         "snapshot_dir": r"G:\canadian-tire\car-culture-history",
     },
     {
+        "label": "Pop Culture",
+        "url": "https://www.canadiantire.ca/en/pdp/1504099p.html",
+        "snapshot_dir": r"G:\canadian-tire\pop-culture-history",
+    },
+    {
+        "label": "F1",
+        "url": "https://www.canadiantire.ca/en/pdp/1504098p.html",
+        "snapshot_dir": r"G:\canadian-tire\f1-history",
+    },
+    {
         "label": "Team Transport",
         "url": "https://www.canadiantire.ca/en/pdp/0508495p.html",
         "snapshot_dir": r"G:\canadian-tire\team-transport-history",
@@ -39,10 +49,10 @@ recipients = [email.strip() for email in raw.split(",") if email.strip()]
 # search_query → label
 STORES = {
     "Vancouver, SW Marine, BC": "Southwest Marine Drive, Vancouver, BC",
-    "Richmond, BC": "Richmond, BC",
+#    "Richmond, BC": "Richmond, BC",
     "Cambie & 7th, BC": "Cambie Street, Vancouver, BC",
     "Vancouver, Grandview & Boundary, BC": "Grandview Hwy, Vancouver, BC",
-    "Burnaby South, BC": "Southeast Marine Drive, Burnaby, BC",
+#    "Burnaby South, BC": "Southeast Marine Drive, Burnaby, BC",
     "North Vancouver Main, BC": "north vancouver",
 }
 
@@ -272,28 +282,6 @@ def print_increases(increases):
     for store, (old_val, new_val) in increases.items():
         print(f"{store}: {old_val} → {new_val}")
 
-def update_google_sheet(results, csv_path):
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Store Name", "Stock"])
-
-        for store_name, quantity in results.items():
-            writer.writerow([store_name, quantity])
-
-def append_history(results, csv_path):
-    file_exists = os.path.exists(csv_path)
-
-    with open(csv_path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-
-        if not file_exists:
-            writer.writerow(["Timestamp", "Store Name", "Stock"])
-
-        timestamp = datetime.datetime.now().isoformat()
-
-        for store_name, quantity in results.items():
-            writer.writerow([timestamp, store_name, quantity])
-
 def send_email_alert(
     smtp_server,
     smtp_port,
@@ -303,7 +291,6 @@ def send_email_alert(
     increases,
     product_label: str,
 ):
-
     if not increases:
         return  # nothing to alert
 
@@ -401,16 +388,6 @@ def main():
                 )
             else:
                 print("Not enough snapshots to compare yet")
-
-            # 5. Update current stock sheet (overwrite)
-            update_google_sheet(
-                results, fr"G:\canadian-tire\current_stock_{label}.csv"
-            )
-
-            # 6. Append to history sheet
-            #append_history(
-            #    results, fr"G:\canadian-tire\history_{label}.csv"
-            #)
 
 
 if __name__ == "__main__":
