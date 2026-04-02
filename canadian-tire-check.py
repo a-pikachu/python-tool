@@ -12,7 +12,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 logging.basicConfig(
     filename="monitor.log",
-    level=logging.INFO,
+    level=logging.ERROR,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
@@ -122,11 +122,14 @@ def click_first_suggestion(page):
 
     # NEW: Wait for modal to load filtered results
     try:
-        page.locator(
-            f"div.nl-overlay div[role='dialog'] li:has(h3:has-text('{clean_key}'))"
-        ).first.wait_for(state="visible", timeout=5000)
-    except:
-        logging.error(f"[{clean_key}] Modal never loaded filtered results -> -1")
+        dialog = page.locator("div.nl-overlay div[role='dialog']")
+        dialog.wait_for(state="visible", timeout=5000)
+
+        item = dialog.locator(f"li:has(h3:has-text('{clean_key}'))").first
+        item.wait_for(state="visible", timeout=5000)
+
+    except Exception as e:
+        logging.error(f"[{clean_key}] Filtered result never became visible -> -1 ({e})")
 
 def search_and_scrape_first_card(page, search_text, match_name):
     logging.info(f"Searching for '{match_name}' using text '{search_text}'")
