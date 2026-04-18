@@ -48,11 +48,11 @@ recipients = [email.strip() for email in raw.split(",") if email.strip()]
 
 # search_query → label
 STORES = {
-    "Vancouver, SW Marine, BC": "Southwest Marine Drive, Vancouver, BC",
-#    "Richmond, BC": "Richmond, BC",
-    "Cambie & 7th, BC": "Cambie Street, Vancouver, BC",
-    "Vancouver, Grandview & Boundary, BC": "Grandview Hwy, Vancouver, BC",
-#    "Burnaby South, BC": "Southeast Marine Drive, Burnaby, BC",
+    "Vancouver, SW Marine, BC": "marine vancouver",
+#    "Richmond, BC": "richmond",
+    "Cambie & 7th, BC": "cambie vancouver",
+    "Vancouver, Grandview & Boundary, BC": "grandview vancouver",
+#    "Burnaby South, BC": "marine burnaby",
     "North Vancouver Main, BC": "north vancouver",
 }
 
