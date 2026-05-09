@@ -2,7 +2,7 @@ from playwright.sync_api import sync_playwright
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
-import csv, datetime, json, logging, os, re, smtplib, sys, time
+import csv, datetime, json, logging, os, random, re, smtplib, sys, time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
 env_path = os.path.join(BASE_DIR, "..", ".env") 
@@ -131,104 +131,140 @@ def click_first_suggestion(page):
     except Exception as e:
         logging.error(f"[{clean_key}] Filtered result never became visible -> -1 ({e})")
 
-def search_and_scrape_first_card(page, search_text, match_name):
-    logging.info(f"Searching for '{match_name}' using text '{search_text}'")
+def wait_for_filtered_results(page, clean_key, match_name, attempt):
+    try:
+        page.locator(
+            f"div.nl-overlay div[role='dialog'] li:has(h3:has-text('{clean_key}'))"
+        ).first.wait_for(state="visible", timeout=5000)
+        return True
+    except:
+        logging.error(f"[{match_name}] Filtered results failed on attempt {attempt}")
+        return False
+
+def search_and_scrape_first_card(page, search_text, match_name, product_label):
+    logging.info(f"[{product_label}][{match_name}] Searching using text '{search_text}'")
 
     # 1. Wait for input container to finish animating
     try:
         container = page.locator("div.nl-overlay div[role='dialog'] .nl-textinput").first
         container.wait_for(state="visible", timeout=5000)
         page.wait_for_timeout(300)
-    except:
-        logging.error(f"[{match_name}] Input container never stabilized")
+    except Exception:
+        logging.error(f"[{product_label}][{match_name}] Input container never stabilized")
         return match_name, -1
 
-    # 2. Now safely click the input
     search = page.locator("div.nl-overlay div[role='dialog'] input[type='text']").first
-    search.click(force=True)
-    search.fill("")
-    page.keyboard.type(search_text, delay=25)
-    page.wait_for_timeout(1000)
 
-    # 2. Click first autocomplete suggestion
-    suggestions = page.locator("li[class*='autocomplete'], li[class*='option']")
-    try:
-        suggestions.first.wait_for(state="visible", timeout=5000)
-    except Exception as e:
-        logging.error(f"[{match_name}] autocomplete never appeared → -1 ({e})")
+    # --- RETRY ONLY AUTOCOMPLETE (same logic as your original) ---
+    suggestion_clicked = False
+    for attempt in range(1, 4):
+        try:
+            logging.info(f"[{product_label}][{match_name}] Autocomplete attempt {attempt}")
+
+            search.click(force=True)
+            search.fill("")
+            page.keyboard.type(search_text, delay=25)
+            page.wait_for_timeout(800)
+
+            suggestions = page.locator("li[class*='autocomplete'], li[class*='option']")
+            suggestions.first.wait_for(state="visible", timeout=2500)
+            suggestions.first.click(force=True)
+            page.wait_for_timeout(1200)
+
+            suggestion_clicked = True
+            break
+        except Exception as e:
+            logging.warning(
+                f"[{product_label}][{match_name}] Autocomplete attempt {attempt} failed: {e}"
+            )
+            page.wait_for_timeout(400)
+
+    if not suggestion_clicked:
+        logging.error(f"[{product_label}][{match_name}] Autocomplete never appeared -> -1")
         return match_name, -1
-
-    suggestions.first.click(force=True)
-    page.wait_for_timeout(1200)
 
     # Normalize match key (city only)
     clean_key = match_name.split(",")[0].strip().lower()
 
-    # Wait for modal to load filtered results (store names containing the city)
+    # 2. Wait for modal to load filtered results
     try:
         page.locator(
             f"div.nl-overlay div[role='dialog'] li:has(h3:has-text('{clean_key}'))"
         ).first.wait_for(state="visible", timeout=5000)
     except Exception:
-        logging.error(f"[{match_name}] Modal never loaded filtered results -> -1")
-        return match_name, -1
-
-    # 3. Wait for real store cards (those containing <h3>)
-    try:
-        page.locator("div.nl-overlay div[role='dialog'] li h3").first.wait_for(
-            state="visible", timeout=5000
+        logging.error(
+            f"[{product_label}][{match_name}] Modal never loaded filtered results -> -1"
         )
-    except Exception:
-        logging.error(f"[{match_name}] No real store cards loaded -> -1")
         return match_name, -1
 
-    # Now select only real cards (li elements that contain an h3)
+    # 3. Wait for real store cards (Fix #3: retry loop)
     cards = page.locator("div.nl-overlay div[role='dialog'] li:has(h3)")
-    count = cards.count()
-    logging.info(f"[{match_name}] Found {count} real store cards")
 
+    count = 0
+    for attempt in range(1, 4):
+        count = cards.count()
+        if count > 0:
+            break
+        logging.warning(
+            f"[{product_label}][{match_name}] No store cards on attempt {attempt}, retrying…"
+        )
+        page.wait_for_timeout(1200)
+
+    if count == 0:
+        logging.error(f"[{product_label}][{match_name}] Store cards never loaded -> -1")
+        return match_name, -1
+
+    # 4. Iterate through cards and match store name
     for i in range(count):
         card = cards.nth(i)
 
-        # Extract store name
         name_el = card.locator("h3").first
         if not name_el.count():
-            logging.warning(f"[{match_name}] Card {i} missing <h3>, skipping")
+            logging.warning(
+                f"[{product_label}][{match_name}] Card {i} missing <h3>, skipping"
+            )
             continue
 
         card_name = name_el.inner_text().strip()
 
-        # Match using cleaned city key
         if match_name.lower() != card_name.lower():
             continue
 
         # Extract stock tag
         stock_el = card.locator("span.nl-tag").first
         if not stock_el.count():
-            logging.error(f"[{match_name}] Store '{card_name}' missing stock tag -> -1")
+            logging.error(
+                f"[{product_label}][{match_name}] Store '{card_name}' missing stock tag -> -1"
+            )
             return match_name, -1
 
         stock_text = stock_el.inner_text().strip().lower()
-        logging.info(f"[{match_name}] Raw stock text for '{card_name}': '{stock_text}'")
+        logging.info(
+            f"[{product_label}][{match_name}] Raw stock text for '{card_name}': '{stock_text}'"
+        )
 
-        # Explicit out of stock
         if "out of stock" in stock_text:
-            logging.info(f"[{match_name}] '{card_name}' explicitly OUT OF STOCK -> 0")
+            logging.info(
+                f"[{product_label}][{match_name}] '{card_name}' explicitly OUT OF STOCK -> 0"
+            )
             return match_name, 0
 
-        # Extract number
         m = re.search(r"(\d+)", stock_text)
         if m:
             qty = int(m.group(1))
-            logging.info(f"[{match_name}] '{card_name}' stock parsed as {qty}")
+            logging.info(
+                f"[{product_label}][{match_name}] '{card_name}' stock parsed as {qty}"
+            )
             return match_name, qty
 
-        # Unexpected format
-        logging.error(f"[{match_name}] Cannot parse stock text '{stock_text}' -> -1")
+        logging.error(
+            f"[{product_label}][{match_name}] Cannot parse stock text '{stock_text}' -> -1"
+        )
         return match_name, -1
 
-    logging.error(f"[{match_name}] No matching card found -> -1")
+    logging.error(f"[{product_label}][{match_name}] No matching card found -> -1")
     return match_name, -1
+
 
 def save_snapshot(results, folder_path):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -356,12 +392,12 @@ def main():
                     results[store_label] = -1   # unreachable / failed check
                     continue
                 
-                _, quantity = search_and_scrape_first_card(page, search_query, store_label)
+                _, quantity = search_and_scrape_first_card(page, search_query, store_label, label)
 
                 print(f"{store_label} → {quantity} In Stock")
                 results[store_label] = (quantity)
 
-                time.sleep(1)
+                time.sleep(random.uniform(1.2, 3.5))
 
             print("\nFinal Results:")
             for store_label, quantity in results.items():
