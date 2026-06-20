@@ -20,22 +20,22 @@ PRODUCTS = [
     {
         "label": "Car Culture",
         "url": "https://www.canadiantire.ca/en/pdp/0508182p.html",
-        "snapshot_dir": r"G:\canadian-tire\car-culture-history",
+        "snapshot_dir": r"E:\canadian-tire\car-culture-history",
     },
     {
         "label": "Pop Culture",
         "url": "https://www.canadiantire.ca/en/pdp/1504099p.html",
-        "snapshot_dir": r"G:\canadian-tire\pop-culture-history",
+        "snapshot_dir": r"E:\canadian-tire\pop-culture-history",
     },
     {
         "label": "F1",
         "url": "https://www.canadiantire.ca/en/pdp/1504098p.html",
-        "snapshot_dir": r"G:\canadian-tire\f1-history",
+        "snapshot_dir": r"E:\canadian-tire\f1-history",
     },
     {
         "label": "Team Transport",
         "url": "https://www.canadiantire.ca/en/pdp/0508495p.html",
-        "snapshot_dir": r"G:\canadian-tire\team-transport-history",
+        "snapshot_dir": r"E:\canadian-tire\team-transport-history",
     },
 ]
 
@@ -392,12 +392,22 @@ def main():
                     results[store_label] = -1   # unreachable / failed check
                     continue
                 
-                _, quantity = search_and_scrape_first_card(page, search_query, store_label, label)
+                quantity = -1
+                for attempt in range(1, 3):  # 2 attempts total
+                    print(f"  → Store lookup attempt {attempt}…")
+                    _, quantity = search_and_scrape_first_card(page, search_query, store_label, label)
+
+                    if quantity != -1:
+                        break  # success
+
+                    # failed → wait and retry
+                    wait = random.uniform(1.5, 3.5)
+                    print(f"    Failed (got -1). Retrying after {wait:.1f}s…")
+                    time.sleep(wait)
 
                 print(f"{store_label} → {quantity} In Stock")
-                results[store_label] = (quantity)
+                results[store_label] = quantity
 
-                time.sleep(random.uniform(1.2, 3.5))
 
             print("\nFinal Results:")
             for store_label, quantity in results.items():
