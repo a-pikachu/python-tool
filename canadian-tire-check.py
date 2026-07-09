@@ -20,22 +20,22 @@ PRODUCTS = [
     {
         "label": "Car Culture",
         "url": "https://www.canadiantire.ca/en/pdp/0508182p.html",
-        "snapshot_dir": r"E:\canadian-tire\car-culture-history",
+        "snapshot_dir": r"/media/pika/3TB/canadian-tire/car-culture-history",
     },
     {
         "label": "Pop Culture",
         "url": "https://www.canadiantire.ca/en/pdp/1504099p.html",
-        "snapshot_dir": r"E:\canadian-tire\pop-culture-history",
+        "snapshot_dir": r"/media/pika/3TB/canadian-tire/pop-culture-history",
     },
     {
         "label": "F1",
         "url": "https://www.canadiantire.ca/en/pdp/1504098p.html",
-        "snapshot_dir": r"E:\canadian-tire\f1-history",
+        "snapshot_dir": r"/media/pika/3TB/canadian-tire/f1-history",
     },
     {
         "label": "Team Transport",
         "url": "https://www.canadiantire.ca/en/pdp/0508495p.html",
-        "snapshot_dir": r"E:\canadian-tire\team-transport-history",
+        "snapshot_dir": r"/media/pika/3TB/canadian-tire/team-transport-history",
     },
 ]
 
