@@ -353,6 +353,25 @@ def send_email_alert(
         server.login(username, password)
         server.sendmail(username, recipients, msg.as_string())
 
+def delete_old_snapshots(folder_path, days=15):
+    cutoff = time.time() - (days * 86400)  # 15 days → seconds
+
+    deleted = []
+    for filename in os.listdir(folder_path):
+        if not filename.endswith(".json"):
+            continue
+
+        full_path = os.path.join(folder_path, filename)
+        try:
+            mtime = os.path.getmtime(full_path)
+            if mtime < cutoff:
+                os.remove(full_path)
+                deleted.append(filename)
+        except Exception as e:
+            logging.error(f"Failed to delete {full_path}: {e}")
+
+    return deleted
+
 
 def main():
     with sync_playwright() as p:
@@ -415,6 +434,10 @@ def main():
 
             # 1. Save snapshot
             snapshot_path = save_snapshot(results, snapshot_dir)
+
+            deleted = delete_old_snapshots(snapshot_dir, days=15)
+            if deleted:
+                print(f"Deleted old snapshots: {deleted}")
 
             # 2. Load previous + latest snapshots
             old, new = load_snapshots(snapshot_dir)
