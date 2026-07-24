@@ -20,22 +20,22 @@ PRODUCTS = [
     {
         "label": "Car Culture",
         "url": "https://www.canadiantire.ca/en/pdp/0508182p.html",
-        "snapshot_dir": r"G:\canadian-tire\car-culture-history",
+        "snapshot_dir": r"E:\canadian-tire\car-culture-history",
     },
     {
         "label": "Pop Culture",
         "url": "https://www.canadiantire.ca/en/pdp/1504099p.html",
-        "snapshot_dir": r"G:\canadian-tire\pop-culture-history",
+        "snapshot_dir": r"E:\canadian-tire\pop-culture-history",
     },
     {
         "label": "F1",
         "url": "https://www.canadiantire.ca/en/pdp/1504098p.html",
-        "snapshot_dir": r"G:\canadian-tire\f1-history",
+        "snapshot_dir": r"E:\canadian-tire\f1-history",
     },
     {
         "label": "Team Transport",
         "url": "https://www.canadiantire.ca/en/pdp/0508495p.html",
-        "snapshot_dir": r"G:\canadian-tire\team-transport-history",
+        "snapshot_dir": r"E:\canadian-tire\team-transport-history",
     },
 ]
 
@@ -353,6 +353,25 @@ def send_email_alert(
         server.login(username, password)
         server.sendmail(username, recipients, msg.as_string())
 
+def delete_old_snapshots(folder_path, days=15):
+    cutoff = time.time() - (days * 86400)  # 15 days → seconds
+
+    deleted = []
+    for filename in os.listdir(folder_path):
+        if not filename.endswith(".json"):
+            continue
+
+        full_path = os.path.join(folder_path, filename)
+        try:
+            mtime = os.path.getmtime(full_path)
+            if mtime < cutoff:
+                os.remove(full_path)
+                deleted.append(filename)
+        except Exception as e:
+            logging.error(f"Failed to delete {full_path}: {e}")
+
+    return deleted
+
 
 def main():
     with sync_playwright() as p:
@@ -392,12 +411,22 @@ def main():
                     results[store_label] = -1   # unreachable / failed check
                     continue
                 
-                _, quantity = search_and_scrape_first_card(page, search_query, store_label, label)
+                quantity = -1
+                for attempt in range(1, 3):  # 2 attempts total
+                    print(f"  → Store lookup attempt {attempt}…")
+                    _, quantity = search_and_scrape_first_card(page, search_query, store_label, label)
+
+                    if quantity != -1:
+                        break  # success
+
+                    # failed → wait and retry
+                    wait = random.uniform(1.5, 3.5)
+                    print(f"    Failed (got -1). Retrying after {wait:.1f}s…")
+                    time.sleep(wait)
 
                 print(f"{store_label} → {quantity} In Stock")
-                results[store_label] = (quantity)
+                results[store_label] = quantity
 
-                time.sleep(random.uniform(1.2, 3.5))
 
             print("\nFinal Results:")
             for store_label, quantity in results.items():
@@ -405,6 +434,10 @@ def main():
 
             # 1. Save snapshot
             snapshot_path = save_snapshot(results, snapshot_dir)
+
+            deleted = delete_old_snapshots(snapshot_dir, days=15)
+            if deleted:
+                print(f"Deleted old snapshots: {deleted}")
 
             # 2. Load previous + latest snapshots
             old, new = load_snapshots(snapshot_dir)
