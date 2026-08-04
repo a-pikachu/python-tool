@@ -372,6 +372,79 @@ def delete_old_snapshots(folder_path, days=15):
 
     return deleted
 
+def dismiss_first_popup(page):
+    """
+    Handles Canadian Tire's Free Local Shipping popup.
+    The visible button is often blocked by an overlay, so we click the overlay container instead.
+    """
+
+    page.wait_for_timeout(20000)
+
+    # 1. Detect the free-shipping modal container
+    modal = page.locator("div.abtest-freeshipping_modal, div[class*='freeshipping']")
+    if modal.count() > 0:
+        print("Free-shipping modal detected")
+
+        # 2. Try clicking the Continue Shopping button normally
+        btn = modal.locator("button:has-text('Continue Shopping')")
+        if btn.count() > 0:
+            try:
+                btn.first.click(force=True)
+                page.wait_for_timeout(1200)
+                print("Dismissed popup via button")
+                return True
+            except:
+                print("Button click blocked, trying overlay click")
+
+        # 3. Click the overlay container itself (works even when button is blocked)
+        try:
+            page.evaluate("el => el.click()", modal.first)
+            page.wait_for_timeout(1200)
+            print("Dismissed popup via overlay JS click")
+            return True
+        except Exception as e:
+            print(f"Overlay JS click failed: {e}")
+
+    # 4. Fallback generic selectors
+    fallback = page.locator("text=Continue Shopping")
+    if fallback.count() > 0:
+        try:
+            fallback.first.click(force=True)
+            page.wait_for_timeout(1200)
+            print("Dismissed popup via fallback selector")
+            return True
+        except:
+            pass
+
+    print("No popup dismissed")
+    return False
+
+def wait_for_free_shipping_popup(page, timeout=20000):
+    """
+    Wait up to 20 seconds for the free-shipping popup to appear.
+    Returns True if detected.
+    """
+
+    selectors = [
+        "div.abtest-freeshipping_modal",
+        "div[class*='freeshipping']",
+        "text=Free Local Shipping",
+        "text=Continue Shopping",
+    ]
+
+    start = time.time()
+    while time.time() - start < timeout / 1000:
+        for sel in selectors:
+            if page.locator(sel).count() > 0:
+                print(f"Popup detected via selector: {sel}")
+                return True
+
+        # Keep Playwright alive
+        page.wait_for_timeout(300)
+
+    print("Popup did not appear within timeout")
+    return False
+
 
 def main():
     with sync_playwright() as p:
@@ -387,6 +460,8 @@ def main():
 
         page = browser.new_page()
         results = {}
+        
+        first_load = True
 
         for product in PRODUCTS:
             label = product["label"]
@@ -400,6 +475,11 @@ def main():
             results = {}
             page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(6000)
+            
+            if first_load:
+                if wait_for_free_shipping_popup(page):
+                     dismiss_first_popup(page)
+                first_load = False
 
             for store_label, search_query in STORES.items():
                 print(f"\nChecking: {store_label}")
