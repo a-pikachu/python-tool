@@ -20,22 +20,22 @@ PRODUCTS = [
     {
         "label": "Car Culture",
         "url": "https://www.canadiantire.ca/en/pdp/0508182p.html",
-        "snapshot_dir": r"E:\canadian-tire\car-culture-history",
+        "snapshot_dir": r"G:\canadian-tire\car-culture-history",
     },
     {
         "label": "Pop Culture",
         "url": "https://www.canadiantire.ca/en/pdp/1504099p.html",
-        "snapshot_dir": r"E:\canadian-tire\pop-culture-history",
+        "snapshot_dir": r"G:\canadian-tire\pop-culture-history",
     },
     {
         "label": "F1",
         "url": "https://www.canadiantire.ca/en/pdp/1504098p.html",
-        "snapshot_dir": r"E:\canadian-tire\f1-history",
+        "snapshot_dir": r"G:\canadian-tire\f1-history",
     },
     {
         "label": "Team Transport",
         "url": "https://www.canadiantire.ca/en/pdp/0508495p.html",
-        "snapshot_dir": r"E:\canadian-tire\team-transport-history",
+        "snapshot_dir": r"G:\canadian-tire\team-transport-history",
     },
 ]
 
@@ -448,19 +448,38 @@ def wait_for_free_shipping_popup(page, timeout=20000):
 
 def main():
     with sync_playwright() as p:
+        # 1. Launch with anti-detection flags tailored for automated background tasks
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=[
-                "--disable-geolocation",
+                "--disable-blink-features=AutomationControlled",
                 "--disable-features=IsolateOrigins,site-per-process",
                 "--disable-site-isolation-trials",
-                "--deny-permission-prompts",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--window-size=640,480",
             ],
         )
 
-        page = browser.new_page()
-        results = {}
+        # 2. Create a persistent context mimicking a real user session
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 640, "height": 480},
+            java_script_enabled=True,
+            bypass_csp=True,
+        )
+
+        # 3. Strip out the navigator.webdriver fingerprint property
+        context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+        page = context.new_page()
         
+        # 4. Increase global default navigation timeout to 60 seconds
+        page.set_default_navigation_timeout(60000)
+
+        results = {}
         first_load = True
 
         for product in PRODUCTS:
@@ -473,7 +492,15 @@ def main():
             print(f"==============================")
 
             results = {}
-            page.goto(url, wait_until="domcontentloaded")
+            
+            # Use a more resilient network wait state or catch timeouts safely
+            try:
+                page.goto(url, wait_until="commit", timeout=60000)
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except Exception as e:
+                print(f"Navigation error or block encountered for {label}: {e}")
+                continue
+
             page.wait_for_timeout(6000)
             
             if first_load:
@@ -483,23 +510,27 @@ def main():
 
             for store_label, search_query in STORES.items():
                 print(f"\nChecking: {store_label}")
-                page.goto(url, wait_until="domcontentloaded")
+                try:
+                    page.goto(url, wait_until="commit", timeout=60000)
+                    page.wait_for_load_state("domcontentloaded", timeout=30000)
+                except Exception as e:
+                    print(f"Navigation error on store reload for {store_label}: {e}")
+                
                 page.wait_for_timeout(800)
 
                 if not open_retail_store_selector(page):
                     print(f"Skipping {store_label} — modal did not open")
-                    results[store_label] = -1   # unreachable / failed check
+                    results[store_label] = -1
                     continue
                 
                 quantity = -1
-                for attempt in range(1, 3):  # 2 attempts total
+                for attempt in range(1, 3):
                     print(f"  → Store lookup attempt {attempt}…")
                     _, quantity = search_and_scrape_first_card(page, search_query, store_label, label)
 
                     if quantity != -1:
-                        break  # success
+                        break
 
-                    # failed → wait and retry
                     wait = random.uniform(1.5, 3.5)
                     print(f"    Failed (got -1). Retrying after {wait:.1f}s…")
                     time.sleep(wait)
@@ -507,6 +538,7 @@ def main():
                 print(f"{store_label} → {quantity} In Stock")
                 results[store_label] = quantity
 
+            # Rest of your snapshot, diffing, and email logic remains the same...
 
             print("\nFinal Results:")
             for store_label, quantity in results.items():
