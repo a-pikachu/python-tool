@@ -5,22 +5,28 @@ from mutagen.id3 import ID3, ID3NoHeaderError, Encoding, TIT2, TRCK
 from mutagen.wave import WAVE
 from mutagen.flac import FLAC
 
-# Regex to capture leading "01. " or "1. " or "003. "
-TRACK_PREFIX = re.compile(r"^\s*(\d+)\.\s*(.*)$")
+# Regex to capture "01. Title"
+TRACK_PREFIX_DOT = re.compile(r"^\s*(\d+)\.\s*(.*)$")
+
+# Regex to capture "(01) Title"
+TRACK_PREFIX_PAREN = re.compile(r"^\s*\((\d+)\)\s*(.*)$")
 
 def parse_filename(filename):
     """Extract track number and cleaned title from filename."""
     name = os.path.splitext(filename)[0]
-    match = TRACK_PREFIX.match(name)
 
+    # Try (01) Title
+    match = TRACK_PREFIX_PAREN.match(name)
     if match:
-        track_num = match.group(1)
-        title = match.group(2)
-    else:
-        track_num = None
-        title = name
+        return match.group(1), match.group(2)
 
-    return track_num, title
+    # Try 01. Title
+    match = TRACK_PREFIX_DOT.match(name)
+    if match:
+        return match.group(1), match.group(2)
+
+    # No match → return whole name as title
+    return None, name
 
 def set_title_and_track(path):
     if not os.path.isdir(path):
