@@ -60,36 +60,37 @@ def save_to_postgres(product_label, product_sku, results):
         print(f"Database insertion error for {product_label}: {e}")
 
 def dismiss_any_popup(page):
-    """Aggressively checks for and clears any active modals/popups blocking interaction."""
+    """Aggressively clears modals, removes leftover DOM nodes, and restores pointer/scroll access."""
     selectors = [
         "div.abtest-freeshipping_modal button:has-text('Continue Shopping')",
         "div[class*='freeshipping'] button:has-text('Continue Shopping')",
         "button:has-text('Continue Shopping')",
-        "div.abtest-freeshipping_modal",
-        "div[class*='freeshipping']"
     ]
     for sel in selectors:
         try:
             el = page.locator(sel).first
             if el.count() > 0 and el.is_visible():
                 el.click(force=True, timeout=2000)
-                page.wait_for_timeout(1000)
-                print("Successfully dismissed a popup/modal.")
-                return True
+                page.wait_for_timeout(500)
         except:
             pass
-    return False
+
+    # Wipe lingering A/B test overlays, backdrops, and pointer traps
+    page.evaluate("""() => {
+        document.querySelectorAll('div.abtest-freeshipping_modal, div[class*="freeshipping"], div.modal-backdrop, div.overlay').forEach(el => el.remove());
+        document.body.style.overflow = 'auto';
+        document.body.style.pointerEvents = 'auto';
+        document.documentElement.style.overflow = 'auto';
+    }""")
 
 def search_and_navigate_to_product(page, sku):
     """Dismisses any blocking popups first, then uses the header search bar to find the SKU."""
     try:
-        # Always clear potential popups before interacting with the search bar
         dismiss_any_popup(page)
 
         search_input = page.locator("input[type='search'], input[placeholder*='Search']").first
         search_input.wait_for(state="visible", timeout=10000)
         
-        # Ensure input is enabled and clickable
         search_input.click(force=True)
         search_input.fill("")
         page.keyboard.type(sku, delay=50)
@@ -97,25 +98,33 @@ def search_and_navigate_to_product(page, sku):
         
         page.keyboard.press("Enter")
         page.wait_for_timeout(4000)
+        
+        # Post-search cleanup in case A/B modal triggered late on search results page
+        dismiss_any_popup(page)
         return True
     except Exception as e:
         print(f"Search navigation error for SKU {sku}: {e}")
         return False
 
 def open_retail_store_selector(page):
-    page.wait_for_timeout(4000)
+    page.wait_for_timeout(2000)
     for attempt in range(1, 4):
         try:
+            # Force cleanup lingering focus/pointer blocks on retry
+            if attempt > 1:
+                page.evaluate("document.body.style.pointerEvents = 'auto';")
+                dismiss_any_popup(page)
+
             links = page.locator("text=Check other stores")
             count = links.count()
             if count == 0:
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(1500)
                 continue
             link = links.nth(count - 1)
             link.scroll_into_view_if_needed()
             link.wait_for(state="visible")
-            page.wait_for_timeout(1000)
-            link.click()
+            page.wait_for_timeout(800)
+            link.click(force=True)
             page.wait_for_selector("div.nl-overlay div[role='dialog'] input[type='text']", timeout=8000)
             return True
         except Exception:
@@ -218,7 +227,6 @@ def main():
                 print(f"==============================")
 
                 if not search_and_navigate_to_product(page, sku):
-                    # Fallback refresh if search failed
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     continue
                     
@@ -250,7 +258,6 @@ def main():
 
                 save_to_postgres(product_label=label, product_sku=sku, results=results)
                 
-                # Head back to homepage for the next product
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(2000)
 
